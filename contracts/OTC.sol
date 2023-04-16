@@ -36,52 +36,21 @@ contract OTC {
 
     function ping() external {}
 
-    function makeRFQ(
-        address _tokenBuy,
-        address _tokenSell,
-        uint _tokenBuyQty,
-        uint _tokenSellQty
-    ) external {
+    function makeRFQ(address _tokenBuy, address _tokenSell, uint _tokenBuyQty, uint _tokenSellQty) external {
         ERC20 tokenSell = ERC20(_tokenSell);
 
-        // bool approved = tokenSell.approve(address(this), _tokenSellQty);
-        // require(approved, "Approval failed");
-        // console.log(
-        //     "solidity allowance: ",
-        //     tokenSell.allowance(msg.sender, address(this))
-        // );
-
-        require(
-            tokenSell.allowance(msg.sender, address(this)) >= _tokenSellQty,
-            "Not enough allowance for token sell"
-        );
+        require(tokenSell.allowance(msg.sender, address(this)) >= _tokenSellQty, "Not enough allowance for token sell");
 
         // transfer sell token to contract
-        bool success = tokenSell.transferFrom(
-            msg.sender,
-            address(this),
-            _tokenSellQty
-        );
+        bool success = tokenSell.transferFrom(msg.sender, address(this), _tokenSellQty);
         require(success, "Deposit of token sell failed");
 
         // create RFQ
-        rfqs[rfqCounter] = RFQ(
-            msg.sender,
-            _tokenBuy,
-            _tokenSell,
-            _tokenBuyQty,
-            _tokenSellQty
-        );
+        rfqs[rfqCounter] = RFQ(msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
 
         rfqCounter++;
 
-        emit RFQMade(
-            msg.sender,
-            _tokenBuy,
-            _tokenSell,
-            _tokenBuyQty,
-            _tokenSellQty
-        );
+        emit RFQMade(msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
     }
 
     function removeRFQ(uint rfqId) external {
@@ -92,22 +61,23 @@ contract OTC {
 
     function takeRFQ(uint rfqId) external {
         // todo check RFQ exists
+        RFQ memory rfq = rfqs[rfqId];
+        ERC20 tokenBuy = ERC20(rfq.tokenBuy);
+
+        // check allowance
+        require(tokenBuy.allowance(msg.sender, address(this)) >= rfq.tokenBuyQty, "Not enough allowance for token buy");
 
         // transfer buy token to maker
-        RFQ memory rfq = rfqs[rfqId];
+        bool success = tokenBuy.transferFrom(msg.sender, rfq.maker, rfq.tokenBuyQty);
+        require(success, "Transfer of token buy failed");
 
         // transfer sell token to taker
+        success = ERC20(rfq.tokenSell).transfer(msg.sender, rfq.tokenSellQty);
+        require(success, "Transfer of token sell failed");
 
         delete rfqs[rfqId];
 
-        emit RFQTaken(
-            msg.sender,
-            rfq.maker,
-            rfq.tokenBuy,
-            rfq.tokenSell,
-            rfq.tokenBuyQty,
-            rfq.tokenSellQty
-        );
+        emit RFQTaken(msg.sender, rfq.maker, rfq.tokenBuy, rfq.tokenSell, rfq.tokenBuyQty, rfq.tokenSellQty);
     }
 
     function getRFQ(uint rfqId) external view returns (RFQ memory) {

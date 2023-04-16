@@ -3,7 +3,7 @@ const { expect } = require("chai")
 var assert = require("assert")
 require("@nomiclabs/hardhat-ethers")
 
-describe("TestToken", function () {
+describe("OTC", function () {
     let deployer
     let account1
     let account2
@@ -14,42 +14,21 @@ describe("TestToken", function () {
     beforeEach(async function () {
         await deployments.fixture(["all"])
         ;[deployer, account1, account2] = await ethers.getSigners()
+
+        // deploy tokens
         const Tk1 = await ethers.getContractFactory("TestToken1")
         token1 = await Tk1.deploy()
         const Tk2 = await ethers.getContractFactory("TestToken2")
         token2 = await Tk2.deploy()
 
+        // airdrop tokens
         token1.transfer(account1.address, 10)
-        token2.transfer(account2.address, 20)
+        token2.transfer(account2.address, 10)
 
+        // deploy OTC
         const OTC = await ethers.getContractFactory("OTC")
         otc = await OTC.deploy()
-
-        // token1 = await ethers.getContract("TestToken1", deployer);
-        // token2 = await ethers.getContract("TestToken2", deployer);
     })
-
-    //   async function deployTestTokens() {
-    //     // Contracts are deployed using the first signer/account by default
-    //     const Tk1 = await ethers.getContractFactory("TestToken1");
-    //     const tk1 = await Tk1.deploy();
-
-    //     const Tk2 = await ethers.getContractFactory("TestToken2");
-    //     const tk2 = await Tk2.deploy();
-
-    //     return { tk1, tk2 };
-    //   }
-
-    //   async function airdropTokens() {
-    //     const { tk1, tk2 } = await loadFixture(deployTestTokens);
-
-    //     const [_, account1, account2] = await ethers.getSigners();
-
-    //     tk1.transfer(account1.address, 10);
-    //     tk2.transfer(account2.address, 20);
-
-    //     return { account1, account2, tk1, tk2 };
-    //   }
 
     describe("Deployment", function () {
         it("Should deploy the test tokens", async function () {
@@ -67,33 +46,81 @@ describe("TestToken", function () {
     describe("Airdrop", function () {
         it("Should airdrop the test tokens", async function () {
             assert.equal((await token1.balanceOf(account1.address)).toString(), "10")
-            assert.equal((await token2.balanceOf(account2.address)).toString(), "20")
+            assert.equal((await token2.balanceOf(account2.address)).toString(), "10")
+
+            assert.equal((await token1.balanceOf(account2.address)).toString(), "0")
+            assert.equal((await token2.balanceOf(account1.address)).toString(), "0")
         })
     })
 
-    describe("OTC", function () {
-        it("Should deploy OTC", async function () {
-            assert.equal(await otc.rfqCounter(), 0)
-
+    describe("RFQ", function () {
+        beforeEach(async function () {
             // set allowance
-            await token2.connect(account2).approve(otc.address, 1)
-            assert.equal(await token2.allowance(account2.address, otc.address), 1)
+            await token1.connect(account1).approve(otc.address, 1)
+            assert.equal(1, await token1.allowance(account1.address, otc.address))
 
             // make RFQ
-            await otc.connect(account2).makeRFQ(token1.address, token2.address, 1, 1)
-            assert.equal((await otc.rfqCounter()).toString(), "1")
+            await otc.connect(account1).makeRFQ(token2.address, token1.address, 1, 1)
+            assert.equal("1", (await otc.rfqCounter()).toString())
+        })
+
+        it("RFQ counter", async function () {
+            assert.equal(await otc.rfqCounter(), 1)
+        })
+
+        it("Balance OTC", async function () {
+            assert.equal("1", (await token1.balanceOf(otc.address)).toString())
+            assert.equal("0", (await token2.balanceOf(otc.address)).toString())
+        })
+
+        it("Balance maker", async function () {
+            assert.equal("9", (await token1.balanceOf(account1.address)).toString())
+            assert.equal("0", (await token2.balanceOf(account1.address)).toString())
+        })
+
+        it("Get RFQ", async function () {
             const rfq = await otc.getRFQ(0)
-            assert.equal(rfq.maker, account2.address)
-            assert.equal(rfq.tokenBuy, token1.address)
-            assert.equal(rfq.tokenSell, token2.address)
-            assert.equal(rfq.tokenBuyQty, 1)
-            assert.equal(rfq.tokenSellQty, 1)
+            assert.equal(account1.address, rfq.maker)
+            assert.equal(token2.address, rfq.tokenBuy)
+            assert.equal(token1.address, rfq.tokenSell)
+            assert.equal(1, rfq.tokenBuyQty)
+            assert.equal(1, rfq.tokenSellQty)
+        })
 
-            // check balance of OTC
-            assert.equal((await token2.balanceOf(otc.address)).toString(), "1")
+        it("Remove RFQ", async function () {
+            await expect(otc.connect(account2).removeRFQ(0)).to.be.revertedWith("Not owner of RFQ")
+            await otc.connect(account1).removeRFQ(0)
+        })
 
-            // remove RFQ
-            await expect(otc.connect(account1).removeRFQ(0)).to.be.revertedWith("Not owner of RFQ")
+        it("Take RFQ", async function () {
+            // set allowance
+            await token2.connect(account2).approve(otc.address, 1)
+            assert.equal(1, await token2.allowance(account2.address, otc.address))
+
+            // take RQF
+            await otc.connect(account2).takeRFQ(0)
+
+            // console.log(`account1 has ${(await token1.balanceOf(account1.address)).toString()} token1`)
+            // console.log(`account1 has ${(await token2.balanceOf(account1.address)).toString()} token2`)
+
+            // console.log(`account2 has ${(await token1.balanceOf(account2.address)).toString()} token1`)
+            // console.log(`account2 has ${(await token2.balanceOf(account2.address)).toString()} token2`)
+
+            // console.log(`otc has ${(await token1.balanceOf(otc.address)).toString()} token1`)
+            // console.log(`otc has ${(await token2.balanceOf(otc.address)).toString()} token2`)
+
+            // OTC has 0 tokens
+            assert.equal("0", (await token1.balanceOf(otc.address)).toString())
+            assert.equal("0", (await token2.balanceOf(otc.address)).toString())
+
+            // taker has 9 token2
+            assert.equal("9", (await token2.balanceOf(account2.address)).toString())
+
+            // taker has 1 token1
+            assert.equal("1", (await token1.balanceOf(account2.address)).toString())
+
+            // maker has 9 token1
+            assert.equal("9", (await token1.balanceOf(account1.address)).toString())
         })
     })
 })
