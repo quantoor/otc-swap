@@ -1,4 +1,4 @@
-const { network, deployments, ethers, getNamedAccounts } = require("hardhat")
+const { deployments, ethers } = require("hardhat")
 const { expect } = require("chai")
 var assert = require("assert")
 const { BigNumber } = require("ethers")
@@ -59,25 +59,27 @@ describe("OTC", function () {
         })
     })
 
-    describe("MakeRFQ", function () {
-        it("MakeRFQ fails", async function () {
-            const amount1 = 1
-            const amount2 = 1
-
-            await expect(
-                otc.connect(account1).makeRFQ(token2.address, token1.address, amount2, amount1)
-            ).to.be.revertedWith("Not enough allowance for token sell")
+    describe("Make RFQ", function () {
+        it("Make RFQ fails", async function () {
+            await expect(otc.connect(account1).makeRFQ(token2.address, token1.address, 1, 1)).to.be.revertedWith(
+                "Not enough allowance for token sell"
+            )
         })
 
         it("Set allowance", async function () {
-            const amount1 = 1
-
-            // set allowance
-            await token1.connect(account1).approve(otc.address, amount1)
-            assert.equal(amount1, await token1.allowance(account1.address, otc.address))
+            await token1.connect(account1).approve(otc.address, 1)
+            assert.equal(1, await token1.allowance(account1.address, otc.address))
         })
 
-        it("MakeRFQ1", async function () {
+        it("Make RFQ not enough balance", async function () {
+            ;[, , , account3] = await ethers.getSigners()
+            await token1.connect(account3).approve(otc.address, 1)
+            await expect(otc.connect(account3).makeRFQ(token2.address, token1.address, 1, 1)).to.be.revertedWith(
+                "ERC20: transfer amount exceeds balance"
+            )
+        })
+
+        it("Make RFQ 1", async function () {
             const amount1 = 1
             const amount2 = 1
 
@@ -86,7 +88,7 @@ describe("OTC", function () {
             assert.equal(1, (await otc.rfqCounter()).toString())
         })
 
-        it("MakeRFQ2", async function () {
+        it("Make RFQ 2", async function () {
             const amount1 = (3 * 10 ** (await token1.decimals())).toString()
             const amount2 = (10 * 10 ** (await token2.decimals())).toString()
 
@@ -94,9 +96,19 @@ describe("OTC", function () {
             await otc.connect(account1).makeRFQ(token2.address, token1.address, amount2, amount1)
             assert.equal(1, (await otc.rfqCounter()).toString())
         })
+
+        it("Emit RFQCreated event", async function () {
+            const amount1 = 10
+            const amount2 = 20
+            await token1.connect(account1).approve(otc.address, amount1)
+
+            await expect(otc.connect(account1).makeRFQ(token2.address, token1.address, amount2, amount1))
+                .to.emit(otc, "RFQCreated")
+                .withArgs(0, account1.address, token2.address, token1.address, amount2, amount1)
+        })
     })
 
-    describe("TakeRFQ", function () {
+    describe("Take RFQ", function () {
         let qtyToken1
         let qtyToken2
 
@@ -148,8 +160,14 @@ describe("OTC", function () {
             await expect(otc.getRFQ(0)).to.be.revertedWith("RFQ not found")
         })
 
-        it("Take RFQ fail allowance", async function () {
+        it("Take RFQ not enough allowance", async function () {
             await expect(otc.connect(account2).takeRFQ(0)).to.revertedWith("Not enough allowance for token buy")
+        })
+
+        it("Take RFQ not enough balance", async function () {
+            ;[, , , account3] = await ethers.getSigners()
+            await token2.connect(account3).approve(otc.address, qtyToken1)
+            await expect(otc.connect(account3).takeRFQ(0)).to.revertedWith("ERC20: transfer amount exceeds balance")
         })
 
         it("Take RFQ", async function () {
@@ -173,6 +191,23 @@ describe("OTC", function () {
             const account1FinalBalanceToken1 = BigNumber.from(initBalanceToken1).sub(BigNumber.from(qtyToken1))
             assert.equal(account1FinalBalanceToken1, (await token1.balanceOf(account1.address)).toString())
             assert.equal(qtyToken2, (await token2.balanceOf(account1.address)).toString())
+        })
+
+        it("Emit RFQFilled event", async function () {
+            const rfq = await otc.getRFQ(0)
+
+            await token2.connect(account2).approve(otc.address, qtyToken1)
+            await expect(otc.connect(account2).takeRFQ(0))
+                .to.emit(otc, "RFQFilled")
+                .withArgs(
+                    0,
+                    account2.address,
+                    account1.address,
+                    rfq.tokenBuy,
+                    rfq.tokenSell,
+                    rfq.tokenBuyQty,
+                    rfq.tokenSellQty
+                )
         })
 
         it("Take RFQ twice", async function () {
