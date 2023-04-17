@@ -6,6 +6,7 @@ import "hardhat/console.sol";
 
 contract OTC {
     struct RFQ {
+        uint id;
         address maker;
         address tokenBuy;
         address tokenSell;
@@ -14,7 +15,8 @@ contract OTC {
     }
 
     event RFQMade(
-        address indexed maker,
+        uint id,
+        address maker,
         address indexed tokenBuy,
         address indexed tokenSell,
         uint tokenBuyQty,
@@ -22,7 +24,8 @@ contract OTC {
     );
 
     event RFQTaken(
-        address indexed taker,
+        uint id,
+        address taker,
         address maker,
         address indexed tokenBuy,
         address indexed tokenSell,
@@ -34,8 +37,6 @@ contract OTC {
     uint public rfqCounter;
     mapping(uint => RFQ) private rfqs;
 
-    function ping() external {}
-
     function makeRFQ(address _tokenBuy, address _tokenSell, uint _tokenBuyQty, uint _tokenSellQty) external {
         ERC20 tokenSell = ERC20(_tokenSell);
 
@@ -46,22 +47,22 @@ contract OTC {
         require(success, "Deposit of token sell failed");
 
         // create RFQ
-        rfqs[rfqCounter] = RFQ(msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
+        rfqs[rfqCounter] = RFQ(rfqCounter, msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
+
+        emit RFQMade(rfqCounter, msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
 
         rfqCounter++;
-
-        emit RFQMade(msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
     }
 
-    function removeRFQ(uint rfqId) external {
-        address maker = rfqs[rfqId].maker;
+    function removeRFQ(uint _id) external {
+        address maker = rfqs[_id].maker;
         require(msg.sender == maker, "Not owner of RFQ");
-        delete rfqs[rfqId];
+        delete rfqs[_id];
     }
 
-    function takeRFQ(uint rfqId) external {
+    function takeRFQ(uint _id) external {
         // todo check RFQ exists
-        RFQ memory rfq = rfqs[rfqId];
+        RFQ memory rfq = rfqs[_id];
         ERC20 tokenBuy = ERC20(rfq.tokenBuy);
 
         // check allowance
@@ -75,12 +76,12 @@ contract OTC {
         success = ERC20(rfq.tokenSell).transfer(msg.sender, rfq.tokenSellQty);
         require(success, "Transfer of token sell failed");
 
-        delete rfqs[rfqId];
+        delete rfqs[_id];
 
-        emit RFQTaken(msg.sender, rfq.maker, rfq.tokenBuy, rfq.tokenSell, rfq.tokenBuyQty, rfq.tokenSellQty);
+        emit RFQTaken(_id, msg.sender, rfq.maker, rfq.tokenBuy, rfq.tokenSell, rfq.tokenBuyQty, rfq.tokenSellQty);
     }
 
-    function getRFQ(uint rfqId) external view returns (RFQ memory) {
-        return rfqs[rfqId];
+    function getRFQ(uint _id) external view returns (RFQ memory) {
+        return rfqs[_id];
     }
 }

@@ -1,6 +1,7 @@
 const { network, deployments, ethers, getNamedAccounts } = require("hardhat")
 const { expect } = require("chai")
 var assert = require("assert")
+const { BigNumber } = require("ethers")
 require("@nomiclabs/hardhat-ethers")
 
 describe("OTC", function () {
@@ -10,6 +11,8 @@ describe("OTC", function () {
     let token1
     let token2
     let otc
+    let initBalanceToken1
+    let initBalanceToken2
 
     beforeEach(async function () {
         await deployments.fixture(["all"])
@@ -22,69 +25,112 @@ describe("OTC", function () {
         token2 = await Tk2.deploy()
 
         // airdrop tokens
-        token1.transfer(account1.address, 10)
-        token2.transfer(account2.address, 10)
+        initBalanceToken1 = (100 * 10 ** (await token1.decimals())).toString()
+        initBalanceToken2 = (1000 * 10 ** (await token2.decimals())).toString()
+        await token1.transfer(account1.address, initBalanceToken1)
+        await token2.transfer(account2.address, initBalanceToken2)
 
         // deploy OTC
         const OTC = await ethers.getContractFactory("OTC")
         otc = await OTC.deploy()
     })
 
-    describe("Deployment", function () {
+    describe("Deploy", function () {
         it("Should deploy the test tokens", async function () {
-            assert.equal(await token1.totalSupply(), 100 * 10 ** 18)
-            assert.equal(await token1.name(), "TestToken1")
-            assert.equal(await token1.symbol(), "TK1")
-            assert.equal(await token1.balanceOf(deployer.address), 100 * 10 ** 18)
-            assert.equal(await token2.totalSupply(), 42 * 10 ** 18)
-            assert.equal(await token2.name(), "TestToken2")
-            assert.equal(await token2.symbol(), "TK2")
-            assert.equal(await token2.balanceOf(deployer.address), 42 * 10 ** 18)
+            assert.equal(18, await token1.decimals())
+            assert.equal(initBalanceToken1, await token1.totalSupply())
+            assert.equal("TestToken1", await token1.name())
+            assert.equal("TK1", await token1.symbol())
+
+            assert.equal(6, await token2.decimals())
+            assert.equal(initBalanceToken2, await token2.totalSupply())
+            assert.equal("TestToken2", await token2.name())
+            assert.equal("TK2", await token2.symbol())
         })
     })
 
     describe("Airdrop", function () {
         it("Should airdrop the test tokens", async function () {
-            assert.equal((await token1.balanceOf(account1.address)).toString(), "10")
-            assert.equal((await token2.balanceOf(account2.address)).toString(), "10")
+            assert.equal(initBalanceToken1, (await token1.balanceOf(account1.address)).toString())
+            assert.equal(initBalanceToken2, (await token2.balanceOf(account2.address)).toString())
 
-            assert.equal((await token1.balanceOf(account2.address)).toString(), "0")
-            assert.equal((await token2.balanceOf(account1.address)).toString(), "0")
+            assert.equal("0", (await token1.balanceOf(account2.address)).toString())
+            assert.equal("0", (await token2.balanceOf(account1.address)).toString())
         })
     })
 
-    describe("RFQ", function () {
-        beforeEach(async function () {
-            // set allowance
-            await token1.connect(account1).approve(otc.address, 1)
-            assert.equal(1, await token1.allowance(account1.address, otc.address))
+    describe("MakeRFQ", function () {
+        it("MakeRFQ fails", async function () {
+            const amount1 = 1
+            const amount2 = 1
 
-            // make RFQ
-            await otc.connect(account1).makeRFQ(token2.address, token1.address, 1, 1)
-            assert.equal("1", (await otc.rfqCounter()).toString())
+            await expect(
+                otc.connect(account1).makeRFQ(token2.address, token1.address, amount2, amount1)
+            ).to.be.revertedWith("Not enough allowance for token sell")
         })
 
-        it("RFQ counter", async function () {
-            assert.equal(await otc.rfqCounter(), 1)
+        it("Set allowance", async function () {
+            const amount1 = 1
+
+            // set allowance
+            await token1.connect(account1).approve(otc.address, amount1)
+            assert.equal(amount1, await token1.allowance(account1.address, otc.address))
+        })
+
+        it("MakeRFQ1", async function () {
+            const amount1 = 1
+            const amount2 = 1
+
+            await token1.connect(account1).approve(otc.address, amount1)
+            await otc.connect(account1).makeRFQ(token2.address, token1.address, amount2, amount1)
+            assert.equal(1, (await otc.rfqCounter()).toString())
+        })
+
+        it("MakeRFQ2", async function () {
+            const amount1 = (3 * 10 ** (await token1.decimals())).toString()
+            const amount2 = (10 * 10 ** (await token2.decimals())).toString()
+
+            await token1.connect(account1).approve(otc.address, amount1)
+            await otc.connect(account1).makeRFQ(token2.address, token1.address, amount2, amount1)
+            assert.equal(1, (await otc.rfqCounter()).toString())
+        })
+    })
+
+    describe("TakeRFQ", function () {
+        let qtyToken1
+        let qtyToken2
+
+        beforeEach(async function () {
+            qtyToken1 = (1 * 10 ** (await token1.decimals())).toString()
+            qtyToken2 = (2 * 10 ** (await token2.decimals())).toString()
+
+            // set allowance
+            await token1.connect(account1).approve(otc.address, qtyToken1)
+            assert.equal(qtyToken1, await token1.allowance(account1.address, otc.address))
+
+            // make RFQ
+            await otc.connect(account1).makeRFQ(token2.address, token1.address, qtyToken2, qtyToken1)
         })
 
         it("Balance OTC", async function () {
-            assert.equal("1", (await token1.balanceOf(otc.address)).toString())
+            assert.equal(qtyToken1, (await token1.balanceOf(otc.address)).toString())
             assert.equal("0", (await token2.balanceOf(otc.address)).toString())
         })
 
         it("Balance maker", async function () {
-            assert.equal("9", (await token1.balanceOf(account1.address)).toString())
+            const amt1 = BigNumber.from(initBalanceToken1).sub(BigNumber.from(qtyToken1))
+            assert.equal(amt1.toString(), (await token1.balanceOf(account1.address)).toString())
             assert.equal("0", (await token2.balanceOf(account1.address)).toString())
         })
 
         it("Get RFQ", async function () {
             const rfq = await otc.getRFQ(0)
+            assert.equal(0, rfq.id)
             assert.equal(account1.address, rfq.maker)
             assert.equal(token2.address, rfq.tokenBuy)
             assert.equal(token1.address, rfq.tokenSell)
-            assert.equal(1, rfq.tokenBuyQty)
-            assert.equal(1, rfq.tokenSellQty)
+            assert.equal(qtyToken2, rfq.tokenBuyQty)
+            assert.equal(qtyToken1, rfq.tokenSellQty)
         })
 
         it("Remove RFQ", async function () {
@@ -92,35 +138,31 @@ describe("OTC", function () {
             await otc.connect(account1).removeRFQ(0)
         })
 
+        it("Take RFQ fail allowance", async function () {
+            await expect(otc.connect(account2).takeRFQ(0)).to.revertedWith("Not enough allowance for token buy")
+        })
+
         it("Take RFQ", async function () {
             // set allowance
-            await token2.connect(account2).approve(otc.address, 1)
-            assert.equal(1, await token2.allowance(account2.address, otc.address))
+            await token2.connect(account2).approve(otc.address, qtyToken1)
+            assert.equal(qtyToken1, await token2.allowance(account2.address, otc.address))
 
             // take RQF
             await otc.connect(account2).takeRFQ(0)
-
-            // console.log(`account1 has ${(await token1.balanceOf(account1.address)).toString()} token1`)
-            // console.log(`account1 has ${(await token2.balanceOf(account1.address)).toString()} token2`)
-
-            // console.log(`account2 has ${(await token1.balanceOf(account2.address)).toString()} token1`)
-            // console.log(`account2 has ${(await token2.balanceOf(account2.address)).toString()} token2`)
-
-            // console.log(`otc has ${(await token1.balanceOf(otc.address)).toString()} token1`)
-            // console.log(`otc has ${(await token2.balanceOf(otc.address)).toString()} token2`)
 
             // OTC has 0 tokens
             assert.equal("0", (await token1.balanceOf(otc.address)).toString())
             assert.equal("0", (await token2.balanceOf(otc.address)).toString())
 
-            // taker has 9 token2
-            assert.equal("9", (await token2.balanceOf(account2.address)).toString())
+            // taker has correct balances
+            const account2FinalBalanceToken2 = BigNumber.from(initBalanceToken2).sub(BigNumber.from(qtyToken2))
+            assert.equal(account2FinalBalanceToken2, (await token2.balanceOf(account2.address)).toString())
+            assert.equal(qtyToken1, (await token1.balanceOf(account2.address)).toString())
 
-            // taker has 1 token1
-            assert.equal("1", (await token1.balanceOf(account2.address)).toString())
-
-            // maker has 9 token1
-            assert.equal("9", (await token1.balanceOf(account1.address)).toString())
+            // maker has correct balances
+            const account1FinalBalanceToken1 = BigNumber.from(initBalanceToken1).sub(BigNumber.from(qtyToken1))
+            assert.equal(account1FinalBalanceToken1, (await token1.balanceOf(account1.address)).toString())
+            assert.equal(qtyToken2, (await token2.balanceOf(account1.address)).toString())
         })
     })
 })
