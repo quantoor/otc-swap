@@ -124,6 +124,10 @@ describe("OTC", function () {
         })
 
         it("Get RFQ", async function () {
+            // fail
+            await expect(otc.getRFQ(1)).to.be.revertedWith("RFQ not found")
+
+            // success
             const rfq = await otc.getRFQ(0)
             assert.equal(0, rfq.id)
             assert.equal(account1.address, rfq.maker)
@@ -134,8 +138,14 @@ describe("OTC", function () {
         })
 
         it("Remove RFQ", async function () {
-            await expect(otc.connect(account2).removeRFQ(0)).to.be.revertedWith("Not owner of RFQ")
+            await expect(otc.connect(account2).removeRFQ(0)).to.be.revertedWith("Not maker of RFQ")
             await otc.connect(account1).removeRFQ(0)
+
+            // check balances
+            assert.equal(initBalanceToken1, (await token1.balanceOf(account1.address)).toString())
+            assert.equal("0", (await token1.balanceOf(otc.address)).toString())
+
+            await expect(otc.getRFQ(0)).to.be.revertedWith("RFQ not found")
         })
 
         it("Take RFQ fail allowance", async function () {
@@ -163,6 +173,12 @@ describe("OTC", function () {
             const account1FinalBalanceToken1 = BigNumber.from(initBalanceToken1).sub(BigNumber.from(qtyToken1))
             assert.equal(account1FinalBalanceToken1, (await token1.balanceOf(account1.address)).toString())
             assert.equal(qtyToken2, (await token2.balanceOf(account1.address)).toString())
+        })
+
+        it("Take RFQ twice", async function () {
+            await token2.connect(account2).approve(otc.address, qtyToken1)
+            await otc.connect(account2).takeRFQ(0)
+            await expect(otc.connect(account2).takeRFQ(0)).to.be.revertedWith("RFQ not found")
         })
     })
 })

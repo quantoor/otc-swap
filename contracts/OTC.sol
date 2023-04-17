@@ -14,7 +14,7 @@ contract OTC {
         uint tokenSellQty;
     }
 
-    event RFQMade(
+    event RFQCreated(
         uint id,
         address maker,
         address indexed tokenBuy,
@@ -23,7 +23,7 @@ contract OTC {
         uint tokenSellQty
     );
 
-    event RFQTaken(
+    event RFQFilled(
         uint id,
         address taker,
         address maker,
@@ -49,20 +49,24 @@ contract OTC {
         // create RFQ
         rfqs[rfqCounter] = RFQ(rfqCounter, msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
 
-        emit RFQMade(rfqCounter, msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
+        emit RFQCreated(rfqCounter, msg.sender, _tokenBuy, _tokenSell, _tokenBuyQty, _tokenSellQty);
 
         rfqCounter++;
     }
 
     function removeRFQ(uint _id) external {
-        address maker = rfqs[_id].maker;
-        require(msg.sender == maker, "Not owner of RFQ");
+        RFQ memory rfq = rfqs[_id];
+        require(msg.sender == rfq.maker, "Not maker of RFQ");
+
+        // give token sell back to maker
+        bool success = ERC20(rfq.tokenSell).transfer(msg.sender, rfq.tokenSellQty);
+        require(success);
+
         delete rfqs[_id];
     }
 
     function takeRFQ(uint _id) external {
-        // todo check RFQ exists
-        RFQ memory rfq = rfqs[_id];
+        RFQ memory rfq = getRFQ(_id);
         ERC20 tokenBuy = ERC20(rfq.tokenBuy);
 
         // check allowance
@@ -78,10 +82,12 @@ contract OTC {
 
         delete rfqs[_id];
 
-        emit RFQTaken(_id, msg.sender, rfq.maker, rfq.tokenBuy, rfq.tokenSell, rfq.tokenBuyQty, rfq.tokenSellQty);
+        emit RFQFilled(_id, msg.sender, rfq.maker, rfq.tokenBuy, rfq.tokenSell, rfq.tokenBuyQty, rfq.tokenSellQty);
     }
 
-    function getRFQ(uint _id) external view returns (RFQ memory) {
-        return rfqs[_id];
+    function getRFQ(uint _id) public view returns (RFQ memory) {
+        RFQ memory rfq = rfqs[_id];
+        require(rfq.maker != address(0), "RFQ not found");
+        return rfq;
     }
 }
