@@ -8,5 +8,7 @@ typechain-types
 # Hardhat files
 cache
 artifacts
+build
+reports
 
 yarn-error.log
