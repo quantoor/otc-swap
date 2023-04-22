@@ -1,4 +1,4 @@
-# Decentralized OTC Market
+# OTC Swap
 
 This is the implementation of a smart contract to allow decentralized OTC swaps of ERC20 tokens. In practice, participants can offer some tokens in exchange for others, at a fixed quote, thus completely avoiding slippage.
 
@@ -36,7 +36,17 @@ To run the tests:
 npx hardhat test
 ```
 
+## Deployments
+
+The following contracts have been deployed to the Sepolia network:
+
+-   OTC contract: `0x9187851164a22E21EeCCDD184e57e8eeF8c36a40`
+-   TestToken1 contract: `0xeB6dEEe04C38a8Ea8cb95EB4Fd3669cb33B104f0`
+-   TestToken2 contract: `0x60c874c2a228fc9B436fb45db7a2e3f25Dc0DCd8`
+
 ## Future ideas
 
+-   Create a GUI for users.
 -   Add taker and maker fees for the protocol.
 -   The tokens deposited when creating an RFQ could be deployed is some DeFi protocol to get a yield for the maker, until the RFQ is filled.
+-   Give to the taker the possibility to swap less amount than the one requested by the maker, for the same quote.
