@@ -28,6 +28,10 @@ After some time, Bob notices the RFQ created by Alice, and decides to fill the R
 
 At the end, Alice - the maker - has bought 0.49 ETH for 1000 DAI, and Bob - the taker - has sold 0.49 ETH for 1000 DAI.
 
+<p align="center">
+  <img src="https://user-images.githubusercontent.com/35916369/233830916-80df670e-995f-447b-8685-0a2bfa0be347.jpg" />
+</p>
+
 ## Test
 
 To run the tests:
